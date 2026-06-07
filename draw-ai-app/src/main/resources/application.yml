@@ -1,0 +1,26 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: draw-ai
+  config:
+    import:
+      - classpath:agent/draw-ai-fixer.yml
+      - classpath:agent/draw-ai-leader.yml
+      - classpath:agent/draw-ai-worker.yml
+
+ai:
+  openai:
+    base-url: https://api.minimaxi.com/v1
+    api-key: sk-cp-JtQvnk2GT7UYSNCBy33cUrTwU0b-0tzH2GAngx2u0fqv7n4NCS4WU2TTpZdOiW7vT_OjZu-xD_nixIAMRhuSOVKTHDv721A_00Fyp-uu5N0dGwkwmboApbU
+    model-name: MiniMax-M3
+    temperature: 0.7
+    read-timeout-ms: 120000
+
+jwt:
+  secret: test-jwt-secret-key-must-be-at-least-32-bytes
+  expiration-seconds: 3600
+  user:
+    username: admin
+    password: admin123

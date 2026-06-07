@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- draw-ai-app:Spring Boot 启动入口、@Configuration、application*.yml -->
+    <parent>
+        <groupId>com.drawai</groupId>
+        <artifactId>draw-ai</artifactId>
+        <version>1.0</version>
+    </parent>
+
+    <artifactId>draw-ai-app</artifactId>
+    <packaging>jar</packaging>
+    <name>draw-ai-app</name>
+    <description>Spring Boot application entry point. Hosts Application.java, @Configuration classes, application*.yml.</description>
+
+
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>fastjson</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+        </dependency>
+
+
+        <!-- langchain4j -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-open-ai</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j</artifactId>
+        </dependency>
+
+
+
+
+
+
+
+
+        <!-- 项目模块 -->
+        <dependency>
+            <groupId>com.drawai</groupId>
+            <artifactId>draw-ai-infrastructure</artifactId>
+            <version>1.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.drawai</groupId>
+            <artifactId>draw-ai-trigger</artifactId>
+            <version>1.0</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+                Mockito 5 inline mock maker self-attaches a byte-buddy-agent at runtime.
+                JDK 21+ warns about dynamic agent loading; explicitly opt in so the
+                JDK warning is suppressed. Mockito's own deprecation warning remains
+                until upstream fixes self-attach on future JDKs.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <argLine>-XX:+EnableDynamicAgentLoading</argLine>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
