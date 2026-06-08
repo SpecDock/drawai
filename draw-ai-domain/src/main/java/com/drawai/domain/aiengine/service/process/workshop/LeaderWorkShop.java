@@ -74,6 +74,7 @@ public class LeaderWorkShop {
             @Override
             public void onCompleteResponse(ChatResponse completeResponse) {
                 String completeAdvice = ThinkBlockFilter.strip(drawingAdvice.toString());
+                log.info("\n\n==========================================================\n{}",  completeAdvice);
                 memory.add(AiMessage.from(completeAdvice));
                 workerWorkShop.workStream(sessionId, completeAdvice, validatingSink(sessionId, sink));
             }

@@ -32,6 +32,7 @@ public class WorkerWorkShop {
 
     private final StreamingChatModelContext streamingChatModelContext;
 
+
     public void workStream(String sessionId, String drawingAdvice, Consumer<GraphNodeDelta> sink) {
         String cleanDrawingAdvice = ThinkBlockFilter.strip(drawingAdvice);
         ChatRequest request = ChatRequest.builder()
@@ -43,6 +44,8 @@ public class WorkerWorkShop {
         ThinkBlockFilter.Stream thinkFilter = ThinkBlockFilter.stream();
 
         workerChatModel.chat(request, new StreamingChatResponseHandler() {
+
+
 
             @Override
             public void onPartialResponse(String partialResponse) {
@@ -93,6 +96,8 @@ public class WorkerWorkShop {
         String content = jsonObject.trim();
         if (!content.isEmpty()) {
             sink.accept(GraphNodeDelta.delta(sessionId, content));
+            log.info(content);
+
         }
     }
 
