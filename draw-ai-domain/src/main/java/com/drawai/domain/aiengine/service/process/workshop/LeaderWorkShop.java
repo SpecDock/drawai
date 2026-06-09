@@ -69,6 +69,9 @@ public class LeaderWorkShop {
             public void onPartialResponse(String partialResponse) {
                 drawingAdvice.append(partialResponse);
                 System.out.print(partialResponse);
+                if (partialResponse != null && !partialResponse.isEmpty()) {
+                    sink.accept(GraphNodeDelta.think(sessionId, "leader", partialResponse));
+                }
             }
 
             @Override
@@ -76,7 +79,9 @@ public class LeaderWorkShop {
                 String completeAdvice = ThinkBlockFilter.strip(drawingAdvice.toString());
                 log.info("\n\n==========================================================\n{}",  completeAdvice);
                 memory.add(AiMessage.from(completeAdvice));
-                workerWorkShop.workStream(sessionId, completeAdvice, validatingSink(sessionId, sink));
+                workerWorkShop.workStream(sessionId, completeAdvice,
+                        validatingSink(sessionId, sink),
+                        sink);
             }
 
             @Override

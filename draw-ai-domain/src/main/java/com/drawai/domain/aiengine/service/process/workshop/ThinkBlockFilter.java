@@ -1,5 +1,7 @@
 package com.drawai.domain.aiengine.service.process.workshop;
 
+import java.util.function.Consumer;
+
 /**
  * Removes provider reasoning blocks before AI output enters business processing.
  */
@@ -36,13 +38,24 @@ public final class ThinkBlockFilter {
     }
 
     public static Stream stream() {
-        return new Stream();
+        return new Stream(ignored -> {
+        });
+    }
+
+    public static Stream stream(Consumer<String> thinkingSink) {
+        return new Stream(thinkingSink);
     }
 
     public static final class Stream {
 
         private final StringBuilder pending = new StringBuilder();
+        private final Consumer<String> thinkingSink;
         private boolean inThinkBlock;
+
+        private Stream(Consumer<String> thinkingSink) {
+            this.thinkingSink = thinkingSink == null ? ignored -> {
+            } : thinkingSink;
+        }
 
         public String append(String chunk) {
             if (chunk != null && !chunk.isEmpty()) {
@@ -61,14 +74,21 @@ public final class ThinkBlockFilter {
                 if (inThinkBlock) {
                     int closeIndex = pending.indexOf(CLOSE_TAG);
                     if (closeIndex >= 0) {
+                        emitThinking(pending.substring(0, closeIndex));
                         pending.delete(0, closeIndex + CLOSE_TAG.length());
                         inThinkBlock = false;
                         continue;
                     }
                     if (finalChunk) {
+                        emitThinking(pending.toString());
                         pending.setLength(0);
                     } else {
-                        keepPossibleTagSuffix(CLOSE_TAG);
+                        int keepLength = possibleTagSuffixLength(CLOSE_TAG);
+                        int emitLength = pending.length() - keepLength;
+                        if (emitLength > 0) {
+                            emitThinking(pending.substring(0, emitLength));
+                            pending.delete(0, emitLength);
+                        }
                     }
                     break;
                 }
@@ -97,10 +117,9 @@ public final class ThinkBlockFilter {
             return result.toString();
         }
 
-        private void keepPossibleTagSuffix(String tag) {
-            int keepLength = possibleTagSuffixLength(tag);
-            if (pending.length() > keepLength) {
-                pending.delete(0, pending.length() - keepLength);
+        private void emitThinking(String content) {
+            if (content != null && !content.isEmpty()) {
+                thinkingSink.accept(content);
             }
         }
 

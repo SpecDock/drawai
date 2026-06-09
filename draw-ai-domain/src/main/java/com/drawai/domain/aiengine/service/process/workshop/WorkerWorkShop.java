@@ -34,6 +34,12 @@ public class WorkerWorkShop {
 
 
     public void workStream(String sessionId, String drawingAdvice, Consumer<GraphNodeDelta> sink) {
+        workStream(sessionId, drawingAdvice, sink, ignored -> {
+        });
+    }
+
+    public void workStream(String sessionId, String drawingAdvice,
+                           Consumer<GraphNodeDelta> sink, Consumer<GraphNodeDelta> thinkSink) {
         String cleanDrawingAdvice = ThinkBlockFilter.strip(drawingAdvice);
         ChatRequest request = ChatRequest.builder()
                 .messages(messagesWithInstruction(cleanDrawingAdvice))
@@ -41,7 +47,8 @@ public class WorkerWorkShop {
 
         StreamingChatModel workerChatModel = streamingChatModelContext.getModel(RoleNameTypes.WORKER.value());
         StringBuilder objectBuffer = new StringBuilder();
-        ThinkBlockFilter.Stream thinkFilter = ThinkBlockFilter.stream();
+        ThinkBlockFilter.Stream thinkFilter = ThinkBlockFilter.stream(thinkContent ->
+                thinkSink.accept(GraphNodeDelta.think(sessionId, "worker", thinkContent)));
 
         workerChatModel.chat(request, new StreamingChatResponseHandler() {
 
