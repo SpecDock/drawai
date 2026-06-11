@@ -4,6 +4,7 @@ import com.drawai.domain.aiengine.model.GraphNodeDelta;
 import com.drawai.domain.aiengine.service.AiStreamingChatModelEngine;
 import com.drawai.domain.aiengine.service.process.workshop.FixerWorkShop;
 import com.drawai.domain.aiengine.service.process.workshop.LeaderWorkShop;
+import com.drawai.domain.aiengine.service.process.stream.DrawStreamCancellation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -23,12 +24,25 @@ public class EngineProcess implements AiStreamingChatModelEngine {
 
     @Override
     public void leaderStream(String sessionId, String userMessage, Consumer<GraphNodeDelta> sink) {
-        leaderWorkShop.workStream(sessionId, userMessage, sink);
+        leaderStream(sessionId, userMessage, sink, new DrawStreamCancellation());
+    }
+
+    @Override
+    public void leaderStream(String sessionId, String userMessage,
+                             Consumer<GraphNodeDelta> sink, DrawStreamCancellation cancellation) {
+        leaderWorkShop.workStream(sessionId, userMessage, sink, cancellation);
     }
 
     @Override
     public void fixerStream(String sessionId, String userFixMessage,
                             String selectedGraphEventJson, Consumer<GraphNodeDelta> sink) {
-        fixerWorkShop.workStream(sessionId, userFixMessage, selectedGraphEventJson, sink);
+        fixerStream(sessionId, userFixMessage, selectedGraphEventJson, sink, new DrawStreamCancellation());
+    }
+
+    @Override
+    public void fixerStream(String sessionId, String userFixMessage,
+                            String selectedGraphEventJson, Consumer<GraphNodeDelta> sink,
+                            DrawStreamCancellation cancellation) {
+        fixerWorkShop.workStream(sessionId, userFixMessage, selectedGraphEventJson, sink, cancellation);
     }
 }

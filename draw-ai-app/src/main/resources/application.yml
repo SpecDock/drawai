@@ -4,6 +4,16 @@ server:
 spring:
   application:
     name: draw-ai
+  task:
+    execution:
+      thread-name-prefix: draw-stream-
+      pool:
+        core-size: 16
+        max-size: 16
+        queue-capacity: 200
+      shutdown:
+        await-termination: true
+        await-termination-period: 30s
   config:
     import:
       - classpath:agent/draw-ai-fixer.yml

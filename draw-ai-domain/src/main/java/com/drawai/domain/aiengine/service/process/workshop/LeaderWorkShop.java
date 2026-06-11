@@ -3,6 +3,7 @@ package com.drawai.domain.aiengine.service.process.workshop;
 import com.drawai.domain.aiengine.model.GraphNodeDelta;
 import com.drawai.domain.aiengine.service.agent.StreamingChatModelContext;
 import com.drawai.domain.aiengine.service.process.graph.GraphEventValidator;
+import com.drawai.domain.aiengine.service.process.stream.DrawStreamCancellation;
 import com.drawai.domain.aiengine.types.RoleNameTypes;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
@@ -13,6 +14,8 @@ import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.chat.response.PartialResponse;
+import dev.langchain4j.model.chat.response.PartialResponseContext;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -53,11 +56,18 @@ public class LeaderWorkShop {
     }
 
     public void workStream(String sessionId, String userMessage, Consumer<GraphNodeDelta> sink) {
+        workStream(sessionId, userMessage, sink, new DrawStreamCancellation());
+    }
+
+    public void workStream(String sessionId, String userMessage,
+                           Consumer<GraphNodeDelta> sink, DrawStreamCancellation cancellation) {
         ChatMemory memory = memoryFor(sessionId);
-        memory.add(UserMessage.from(userMessage));
+        UserMessage userMessageObject = UserMessage.from(userMessage);
+        List<ChatMessage> promptMessages = new ArrayList<>(memory.messages());
+        promptMessages.add(userMessageObject);
 
         ChatRequest request = ChatRequest.builder()
-                .messages(messagesWithInstruction(RoleNameTypes.LEADER.value(), memory.messages()))
+                .messages(messagesWithInstruction(RoleNameTypes.LEADER.value(), promptMessages))
                 .build();
 
         StreamingChatModel leaderChatModel = streamingChatModelContext.getModel(RoleNameTypes.LEADER.value());
@@ -65,34 +75,79 @@ public class LeaderWorkShop {
 
         leaderChatModel.chat(request, new StreamingChatResponseHandler() {
 
+            private final AtomicBoolean handleBound = new AtomicBoolean(false);
+
+            @Override
+            public void onPartialResponse(PartialResponse partialResponse, PartialResponseContext context) {
+                if (handleBound.compareAndSet(false, true)) {
+                    cancellation.bind(context.streamingHandle());
+                }
+                if (cancellation.isCancelled()) {
+                    context.streamingHandle().cancel();
+                    return;
+                }
+                handlePartialText(partialResponse.text());
+            }
+
             @Override
             public void onPartialResponse(String partialResponse) {
-                drawingAdvice.append(partialResponse);
-                System.out.print(partialResponse);
-                if (partialResponse != null && !partialResponse.isEmpty()) {
-                    sink.accept(GraphNodeDelta.think(sessionId, "leader", partialResponse));
+                handlePartialText(partialResponse);
+            }
+
+            private void handlePartialText(String text) {
+                if (cancellation.isCancelled() || text == null || text.isEmpty()) {
+                    return;
                 }
+                drawingAdvice.append(text);
+                System.out.print(text);
+                sink.accept(GraphNodeDelta.think(sessionId, "leader", text));
             }
 
             @Override
             public void onCompleteResponse(ChatResponse completeResponse) {
+                if (cancellation.isCancelled()) {
+                    return;
+                }
                 String completeAdvice = ThinkBlockFilter.strip(drawingAdvice.toString());
+                if (cancellation.isCancelled()) {
+                    return;
+                }
                 log.info("\n\n==========================================================\n{}",  completeAdvice);
-                memory.add(AiMessage.from(completeAdvice));
+                if (cancellation.isCancelled()) {
+                    return;
+                }
                 workerWorkShop.workStream(sessionId, completeAdvice,
-                        validatingSink(sessionId, sink),
-                        sink);
+                        validatingSink(sessionId, sink, () -> commitMemory(memory, userMessageObject, completeAdvice, cancellation)),
+                        sink,
+                        cancellation);
             }
 
             @Override
             public void onError(Throwable error) {
+                if (cancellation.isCancelled()) {
+                    return;
+                }
                 log.error("leader stream error for session={}", sessionId, error);
                 sink.accept(GraphNodeDelta.fail(sessionId, "AI leader stream failed"));
             }
         });
     }
 
-    private Consumer<GraphNodeDelta> validatingSink(String sessionId, Consumer<GraphNodeDelta> sink) {
+    private void commitMemory(ChatMemory memory, UserMessage userMessage, String completeAdvice,
+                              DrawStreamCancellation cancellation) {
+        if (cancellation.isCancelled()) {
+            return;
+        }
+        synchronized (memory) {
+            if (!cancellation.isCancelled()) {
+                memory.add(userMessage);
+                memory.add(AiMessage.from(completeAdvice));
+            }
+        }
+    }
+
+    private Consumer<GraphNodeDelta> validatingSink(String sessionId, Consumer<GraphNodeDelta> sink,
+                                                    Runnable onSuccess) {
         AtomicBoolean closed = new AtomicBoolean(false);
 
         return delta -> {
@@ -106,6 +161,7 @@ public class LeaderWorkShop {
             }
             if (delta.done()) {
                 closed.set(true);
+                onSuccess.run();
                 sink.accept(delta);
                 return;
             }

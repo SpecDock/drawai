@@ -1,6 +1,7 @@
 package com.drawai.domain.chat.service;
 
 import com.drawai.domain.chat.model.ChatDelta;
+import com.drawai.domain.chat.service.stream.ChatStreamCancellation;
 
 import java.util.function.Consumer;
 
@@ -13,4 +14,7 @@ public interface ChatService {
      * whether to bridge to SseEmitter).
      */
     void stream(String sessionId, String userMessage, Consumer<ChatDelta> sink);
+
+    void stream(String sessionId, String userMessage,
+                Consumer<ChatDelta> sink, ChatStreamCancellation cancellation);
 }

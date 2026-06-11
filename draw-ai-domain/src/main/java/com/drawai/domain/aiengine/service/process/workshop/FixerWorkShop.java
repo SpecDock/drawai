@@ -4,6 +4,7 @@ import com.drawai.domain.aiengine.model.GraphNodeDelta;
 import com.drawai.domain.aiengine.service.agent.StreamingChatModelContext;
 import com.drawai.domain.aiengine.service.process.graph.GraphEventValidator;
 import com.drawai.domain.aiengine.service.process.graph.GraphEventValidator.GraphEvent;
+import com.drawai.domain.aiengine.service.process.stream.DrawStreamCancellation;
 import com.drawai.domain.aiengine.types.RoleNameTypes;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
@@ -11,6 +12,8 @@ import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.chat.response.PartialResponse;
+import dev.langchain4j.model.chat.response.PartialResponseContext;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +42,12 @@ public class FixerWorkShop {
 
     public void workStream(String sessionId, String userFixMessage,
                            String selectedGraphEventJson, Consumer<GraphNodeDelta> sink) {
+        workStream(sessionId, userFixMessage, selectedGraphEventJson, sink, new DrawStreamCancellation());
+    }
+
+    public void workStream(String sessionId, String userFixMessage,
+                           String selectedGraphEventJson, Consumer<GraphNodeDelta> sink,
+                           DrawStreamCancellation cancellation) {
         GraphEvent selectedEvent;
         try {
             selectedEvent = graphEventValidator.parseSelected(selectedGraphEventJson);
@@ -59,20 +68,52 @@ public class FixerWorkShop {
 
         fixerChatModel.chat(request, new StreamingChatResponseHandler() {
 
+            private final AtomicBoolean handleBound = new AtomicBoolean(false);
+
+            @Override
+            public void onPartialResponse(PartialResponse partialResponse, PartialResponseContext context) {
+                if (handleBound.compareAndSet(false, true)) {
+                    cancellation.bind(context.streamingHandle());
+                }
+                if (cancellation.isCancelled()) {
+                    context.streamingHandle().cancel();
+                    return;
+                }
+                handlePartialText(partialResponse.text());
+            }
+
             @Override
             public void onPartialResponse(String partialResponse) {
-                fixedAdvice.append(partialResponse);
-                System.out.print(partialResponse);
+                handlePartialText(partialResponse);
+            }
+
+            private void handlePartialText(String text) {
+                if (cancellation.isCancelled() || text == null || text.isEmpty()) {
+                    return;
+                }
+                fixedAdvice.append(text);
+                System.out.print(text);
             }
 
             @Override
             public void onCompleteResponse(ChatResponse completeResponse) {
+                if (cancellation.isCancelled()) {
+                    return;
+                }
                 String completeAdvice = ThinkBlockFilter.strip(fixedAdvice.toString());
-                workerWorkShop.workStream(sessionId, completeAdvice, idLockingSink(sessionId, selectedEvent, sink));
+                if (cancellation.isCancelled()) {
+                    return;
+                }
+                workerWorkShop.workStream(sessionId, completeAdvice, idLockingSink(sessionId, selectedEvent, sink),
+                        ignored -> {
+                        }, cancellation);
             }
 
             @Override
             public void onError(Throwable error) {
+                if (cancellation.isCancelled()) {
+                    return;
+                }
                 log.error("fixer stream error for session={}", sessionId, error);
                 sink.accept(GraphNodeDelta.fail(sessionId, "AI fixer stream failed"));
             }

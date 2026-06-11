@@ -2,6 +2,7 @@ package com.drawai.domain.aiengine.service.process.workshop;
 
 import com.drawai.domain.aiengine.model.GraphNodeDelta;
 import com.drawai.domain.aiengine.service.agent.StreamingChatModelContext;
+import com.drawai.domain.aiengine.service.process.stream.DrawStreamCancellation;
 import com.drawai.domain.aiengine.types.RoleNameTypes;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
@@ -9,6 +10,8 @@ import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.chat.response.PartialResponse;
+import dev.langchain4j.model.chat.response.PartialResponseContext;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,6 +19,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 /**
@@ -35,11 +39,17 @@ public class WorkerWorkShop {
 
     public void workStream(String sessionId, String drawingAdvice, Consumer<GraphNodeDelta> sink) {
         workStream(sessionId, drawingAdvice, sink, ignored -> {
-        });
+        }, new DrawStreamCancellation());
     }
 
     public void workStream(String sessionId, String drawingAdvice,
                            Consumer<GraphNodeDelta> sink, Consumer<GraphNodeDelta> thinkSink) {
+        workStream(sessionId, drawingAdvice, sink, thinkSink, new DrawStreamCancellation());
+    }
+
+    public void workStream(String sessionId, String drawingAdvice,
+                           Consumer<GraphNodeDelta> sink, Consumer<GraphNodeDelta> thinkSink,
+                           DrawStreamCancellation cancellation) {
         String cleanDrawingAdvice = ThinkBlockFilter.strip(drawingAdvice);
         ChatRequest request = ChatRequest.builder()
                 .messages(messagesWithInstruction(cleanDrawingAdvice))
@@ -52,16 +62,41 @@ public class WorkerWorkShop {
 
         workerChatModel.chat(request, new StreamingChatResponseHandler() {
 
+            private final AtomicBoolean handleBound = new AtomicBoolean(false);
 
+            @Override
+            public void onPartialResponse(PartialResponse partialResponse, PartialResponseContext context) {
+                if (handleBound.compareAndSet(false, true)) {
+                    cancellation.bind(context.streamingHandle());
+                }
+                if (cancellation.isCancelled()) {
+                    context.streamingHandle().cancel();
+                    return;
+                }
+                handlePartialText(partialResponse.text());
+            }
 
             @Override
             public void onPartialResponse(String partialResponse) {
-                emitCompletedObjects(sessionId, thinkFilter.append(partialResponse), objectBuffer, sink);
+                handlePartialText(partialResponse);
+            }
+
+            private void handlePartialText(String text) {
+                if (cancellation.isCancelled()) {
+                    return;
+                }
+                emitCompletedObjects(sessionId, thinkFilter.append(text), objectBuffer, sink);
             }
 
             @Override
             public void onCompleteResponse(ChatResponse completeResponse) {
+                if (cancellation.isCancelled()) {
+                    return;
+                }
                 emitCompletedObjects(sessionId, thinkFilter.finish(), objectBuffer, sink);
+                if (cancellation.isCancelled()) {
+                    return;
+                }
                 if (!objectBuffer.toString().trim().isEmpty()) {
                     log.warn("worker stream ended with incomplete graph event for session={}", sessionId);
                     sink.accept(GraphNodeDelta.fail(sessionId, "AI output ended with an incomplete graph event"));
@@ -72,6 +107,9 @@ public class WorkerWorkShop {
 
             @Override
             public void onError(Throwable error) {
+                if (cancellation.isCancelled()) {
+                    return;
+                }
                 log.error("worker stream error for session={}", sessionId, error);
                 sink.accept(GraphNodeDelta.fail(sessionId, "AI worker stream failed"));
             }
